@@ -1,0 +1,987 @@
+---
+title: "R Notebook"
+output: 
+  html_notebook
+---
+
+```{r,include=FALSE}
+library(gWQS)
+library(broom)
+library(broom.mixed)
+library(qgcomp)
+library(gt)
+library(tidyverse)
+library(readxl)
+
+library(boot)
+library(table1)
+library(flextable)
+library(plyr)
+library(Rcpp)
+library(gtsummary)
+library(ggpubr)
+library(cowplot)
+library(gridExtra)
+library(modelr)
+library(readr)
+
+
+urine <- read_excel("~/Projects/Mixture/input/new/urine_final.xlsx")
+blood <- read_excel("~/Projects/Mixture/input/new/blood_final.xlsx")
+
+
+# urine
+
+# add log transformation variables
+urine_log<- urine %>% 
+            mutate(log_calbindin=log2(calbindin),
+                              log_GSTa=log2(GSTa), 
+                              log_TIMP1=log2(TIMP1), 
+                              log_KIM1=log2(KIM1), 
+                              log_IP10=log2(IP10), 
+                              log_Renin=log2(Renin),
+                              log_FABP1=log2(FABP1),
+                              log_EGF=log2(EGF),
+                              log_Lipocalin=log2(Lipocalin),
+                              log_Albumin=log2(Albumin), 
+                              log_Clusterin=log2(Clusterin),
+                              log_CystatinC=log2(CystatinC),
+                              log_OPN =log2(OPN),
+                              log_a1Micro=log2(a1Micro),
+                              log_Uro =log2(Uromodulin),
+                              log_RBP4=log2(RBP4),
+                              log_X2Micro=log2(X2Micro),
+                              log_Uromodulin_mfi=log2(Uromodulin_mfi),
+                              log_As=log2(URAs_adjust),
+                              log_Cd=log2(URCd_adjust),
+                              log_Pb=log2(URPb_adjust),
+                              log_Hg=log2(URHg_adjust))
+urine_log$log_Uromodulin<- urine_log$log_Uro
+
+for (i in 1:nrow(urine_log)){
+  if(is.na(urine_log$log_Uro[i])==TRUE) {urine_log$log_Uromodulin[i]<- NA}
+  else if(urine_log$log_Uro[i] < 12){urine_log$log_Uromodulin[i] <- NA}
+  else {urine_log$log_Uromodulin[i] <- urine_log$log_Uro[i]}
+}
+
+
+# change the names
+urine_log$As<- urine_log$URAs_adjust
+urine_log$Cd<- urine_log$URCd_adjust
+urine_log$Pb<- urine_log$URPb_adjust
+urine_log$Hg<- urine_log$URHg_adjust
+
+urine_log$Calbindin<- urine_log$calbindin
+urine_log$`GSTα`<- urine_log$GSTa
+urine_log$`KIM-1`<- urine_log$KIM1
+urine_log$NGAL<- urine_log$Lipocalin
+urine_log$A1M<- urine_log$a1Micro
+urine_log$`Uromodulin (MFI)`<- urine_log$Uromodulin_mfi
+urine_log$B2M<- urine_log$X2Micro
+urine_log$BMI<- urine_log$`_ZBFA96`
+
+# change the labels    
+label(urine_log$h_egfr_cystc96)<- "eGFR(Cystatin C, mL/min/1.73 m2)"
+label(urine_log$log_calbindin)<-"log2(Calbindin(ng/ml))"
+label(urine_log$log_GSTa)<-"log2(GSTα(ng/ml))"
+label(urine_log$log_TIMP1)<-"log2(TIMP1(ng/ml))"
+label(urine_log$log_KIM1)<-"log2(KIM-1(ng/ml))"
+label(urine_log$log_IP10)<-"log2(IP10(ng/ml))"
+label(urine_log$log_Renin)<-"log2(Renin(ng/ml))"
+label(urine_log$log_FABP1)<-"log2(FABP1(ng/ml))"
+label(urine_log$log_EGF)<-"log2(EGF(ng/ml))"
+label(urine_log$log_Lipocalin)<-"log2(NGAL(ng/ml))"
+label(urine_log$log_Albumin)<-"log2(Albumin(ng/ml))"
+label(urine_log$log_Clusterin)<-"log2(Clusterin(ng/ml))"
+label(urine_log$log_CystatinC)<-"log2(CystatinC(ng/ml))"
+label(urine_log$log_OPN)<-"log2(OPN(ng/ml))"
+label(urine_log$log_a1Micro)<-"log2(A1M(ng/ml))"
+label(urine_log$log_Uromodulin)<-"log2(Uromodulin(ng/ml))"
+label(urine_log$log_Uromodulin_mfi)<-"log2(Uromodulin (MFI)(ng/ml))"
+label(urine_log$log_RBP4)<-"log2(RBP4(ng/ml))"
+label(urine_log$log_X2Micro)<-"log2(B2M(ng/ml))" 
+
+
+# specify metal mixture
+mixture1=names(urine_log[,c("As","Cd","Pb","Hg")])
+mixture1
+
+# specify protein mixture
+mixture_pro=names(urine_log[,c("Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","Uromodulin (MFI)","RBP4", "B2M")])
+mixture_pro
+
+
+##### checking missing 
+urine_log1<- urine_log[,c("As","Cd","Pb","Hg","h_egfr_cystc96","Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","log_Uromodulin","Uromodulin (MFI)","RBP4", "B2M","SES_3cat2T","child_age96","sexo_h00","smoke_inside2T","_ZBFA96")]
+
+sapply(urine_log1, function(x) sum(is.na(x))) 
+
+
+
+# blood
+
+# add log transformation variables
+blood_log<- blood %>% 
+            mutate(log_calbindin=log2(calbindin),
+                              log_GSTa=log2(GSTa), 
+                              log_TIMP1=log2(TIMP1), 
+                              log_KIM1=log2(KIM1), 
+                              log_IP10=log2(IP10), 
+                              log_Renin=log2(Renin),
+                              log_FABP1=log2(FABP1),
+                              log_EGF=log2(EGF),
+                              log_Lipocalin=log2(Lipocalin),
+                              log_Albumin=log2(Albumin), 
+                              log_Clusterin=log2(Clusterin),
+                              log_CystatinC=log2(CystatinC),
+                              log_OPN =log2(OPN),
+                              log_a1Micro=log2(a1Micro),
+                              log_Uro =log2(Uromodulin),
+                              log_RBP4=log2(RBP4),
+                              log_X2Micro=log2(X2Micro),
+                              log_Uromodulin_mfi=log2(Uromodulin_mfi),
+                              log_As=log2(re_AsM2T),
+                              log_Cd=log2(re_CdM2T),
+                              log_Pb=log2(re_PbM2T))
+
+blood_log$log_Uromodulin<- blood_log$log_Uro
+
+for (i in 1:nrow(blood_log)){
+  if(is.na(blood_log$log_Uro[i])==TRUE) {blood_log$log_Uromodulin[i]<- NA}
+  else if(blood_log$log_Uro[i] < 12){blood_log$log_Uromodulin[i] <- NA}
+  else {blood_log$log_Uromodulin[i] <- blood_log$log_Uro[i]}
+}
+
+
+# change the names
+blood_log$As<- blood_log$re_AsM2T
+blood_log$Cd<- blood_log$re_CdM2T
+blood_log$Pb<- blood_log$re_PbM2T
+
+blood_log$Calbindin<- blood_log$calbindin
+blood_log$`GSTα`<- blood_log$GSTa
+blood_log$`KIM-1`<- blood_log$KIM1
+blood_log$NGAL<- blood_log$Lipocalin
+blood_log$A1M<- blood_log$a1Micro
+blood_log$`Uromodulin (MFI)`<- blood_log$Uromodulin_mfi
+blood_log$B2M<- blood_log$X2Micro
+blood_log$BMI<- blood_log$`_ZBFA96`
+
+# change the labels    
+label(blood_log$h_egfr_cystc96)<- "eGFR(Cystatin C, mL/min/1.73 m2)"
+label(blood_log$log_calbindin)<-"log2(Calbindin(ng/ml))"
+label(blood_log$log_GSTa)<-"log2(GSTα(ng/ml))"
+label(blood_log$log_TIMP1)<-"log2(TIMP1(ng/ml))"
+label(blood_log$log_KIM1)<-"log2(KIM-1(ng/ml))"
+label(blood_log$log_IP10)<-"log2(IP10(ng/ml))"
+label(blood_log$log_Renin)<-"log2(Renin(ng/ml))"
+label(blood_log$log_FABP1)<-"log2(FABP1(ng/ml))"
+label(blood_log$log_EGF)<-"log2(EGF(ng/ml))"
+label(blood_log$log_Lipocalin)<-"log2(NGAL(ng/ml))"
+label(blood_log$log_Albumin)<-"log2(Albumin(ng/ml))"
+label(blood_log$log_Clusterin)<-"log2(Clusterin(ng/ml))"
+label(blood_log$log_CystatinC)<-"log2(CystatinC(ng/ml))"
+label(blood_log$log_OPN)<-"log2(OPN(ng/ml))"
+label(blood_log$log_a1Micro)<-"log2(A1M(ng/ml))"
+label(blood_log$log_Uromodulin)<-"log2(Uromodulin(ng/ml))"
+label(blood_log$log_Uromodulin_mfi)<-"log2(Uromodulin (MFI)(ng/ml))"
+label(blood_log$log_RBP4)<-"log2(RBP4(ng/ml))"
+label(blood_log$log_X2Micro)<-"log2(B2M(ng/ml))" 
+
+
+# specify metal mixture
+mixture2=names(blood_log[,c("As","Cd","Pb")])
+mixture2
+
+# specify protein mixture
+mixture_pro2=names(blood_log[,c("Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","Uromodulin (MFI)","RBP4", "B2M")])
+mixture_pro2
+
+
+
+##### checking missing 
+blood_log1<- blood_log[,c("As","Cd","Pb","h_egfr_cystc96","Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","log_Uromodulin","Uromodulin (MFI)","RBP4", "B2M","SES_3cat2T","child_age96","sexo_h00","smoke_inside2T","_ZBFA96")]
+
+sapply(blood_log1, function(x) sum(is.na(x))) 
+
+sapply(urine_log1, function(x) sum(is.na(x))) 
+```
+
+
+
+
+## Blood metal mixture: +, rh=100, adjusted for CRE
+### Tables
+```{r, include=FALSE}
+resultneg_log_h_egfr_ad_pos_blood = gwqsrh(h_egfr_cystc96 ~ wqs +
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 30225, signal="t2")
+resultneg_log_calbindin_ad_pos_blood = gwqsrh(log_calbindin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 58751, signal="t2")
+resultneg_log_GSTa_ad_pos_blood = gwqsrh(log_GSTa ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 45985, signal="t2")
+resultneg_log_TIMP1_ad_pos_blood = gwqsrh(log_TIMP1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 45930, signal="t2")
+resultneg_log_KIM1_ad_pos_blood = gwqsrh(log_KIM1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 84562, signal="t2")
+resultneg_log_IP10_ad_pos_blood = gwqsrh(log_IP10 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 15648, signal="t2")
+resultneg_log_Renin_ad_pos_blood = gwqsrh(log_Renin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 26489, signal="t2")
+resultneg_log_FABP1_ad_pos_blood = gwqsrh(log_FABP1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 31254, signal="t2")
+resultneg_log_EGF_ad_pos_blood = gwqsrh(log_EGF ~wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 79485, signal="t2")
+resultneg_log_Lipocalin_ad_pos_blood = gwqsrh(log_Lipocalin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 41658, signal="t2")
+resultneg_log_Albumin_ad_pos_blood = gwqsrh(log_Albumin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 16489, signal="t2")
+resultneg_log_Clusterin_ad_pos_blood = gwqsrh(log_Clusterin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 47125, signal="t2")
+resultneg_log_CystatinC_ad_pos_blood = gwqsrh(log_CystatinC ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 94856, signal="t2")
+resultneg_log_OPN_ad_pos_blood = gwqsrh(log_OPN ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 92635, signal="t2")
+resultneg_log_a1Micro_ad_pos_blood = gwqsrh(log_a1Micro ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 12544, signal="t2")
+resultneg_log_Uromodulin_ad_pos_blood = gwqsrh(log_Uromodulin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 87946, signal="t2")
+resultneg_log_Uromodulin_mfi_ad_pos_blood = gwqsrh(log_Uromodulin_mfi ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 10325, signal="t2")
+resultneg_log_RBP4_ad_pos_blood = gwqsrh(log_RBP4 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 36251, signal="t2")
+resultneg_log_X2Micro_ad_pos_blood = gwqsrh(log_X2Micro ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture2, data = blood_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 52648, signal="t2")
+
+
+resultneg_log_h_egfr_ad_pos_blood
+
+```
+
+
+#### eGFR
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_h_egfr_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_h_egfr_ad_pos_blood)
+resultneg_log_h_egfr_ad_pos_blood_table
+gwqs_barplot(resultneg_log_h_egfr_ad_pos_blood, tau=0.095)
+resultneg_log_h_egfr_ad_pos_blood$final_weights
+```
+
+#### calbindin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_calbindin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_calbindin_ad_pos_blood)
+resultneg_log_calbindin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_calbindin_ad_pos_blood, tau=0.095)
+resultneg_log_calbindin_ad_pos_blood$final_weights
+```
+
+#### GSTa
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_GSTa_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_GSTa_ad_pos_blood)
+resultneg_log_GSTa_ad_pos_blood_table
+gwqs_barplot(resultneg_log_GSTa_ad_pos_blood, tau=0.095)
+resultneg_log_GSTa_ad_pos_blood$final_weights
+```
+
+#### TIMP1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_TIMP1_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_TIMP1_ad_pos_blood)
+resultneg_log_TIMP1_ad_pos_blood_table
+gwqs_barplot(resultneg_log_TIMP1_ad_pos_blood, tau=0.095)
+resultneg_log_TIMP1_ad_pos_blood$final_weights
+
+```
+
+#### KIM1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_KIM1_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_KIM1_ad_pos_blood)
+resultneg_log_KIM1_ad_pos_blood_table
+gwqs_barplot(resultneg_log_KIM1_ad_pos_blood, tau=0.095)
+resultneg_log_KIM1_ad_pos_blood$final_weights
+
+```
+
+#### IP10
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_IP10_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_IP10_ad_pos_blood)
+resultneg_log_IP10_ad_pos_blood_table
+gwqs_barplot(resultneg_log_IP10_ad_pos_blood, tau=0.095)
+resultneg_log_IP10_ad_pos_blood$final_weights
+```
+
+#### Renin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Renin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Renin_ad_pos_blood)
+resultneg_log_Renin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Renin_ad_pos_blood, tau=0.095)
+resultneg_log_Renin_ad_pos_blood$final_weights
+```
+
+#### FABP1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_FABP1_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_FABP1_ad_pos_blood)
+resultneg_log_FABP1_ad_pos_blood_table
+gwqs_barplot(resultneg_log_FABP1_ad_pos_blood, tau=0.095)
+resultneg_log_FABP1_ad_pos_blood$final_weights
+```
+
+#### EGF
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_EGF_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_EGF_ad_pos_blood)
+resultneg_log_EGF_ad_pos_blood_table
+gwqs_barplot(resultneg_log_EGF_ad_pos_blood, tau=0.095)
+resultneg_log_EGF_ad_pos_blood$final_weights
+```
+
+#### Lipocalin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Lipocalin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Lipocalin_ad_pos_blood)
+resultneg_log_Lipocalin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Lipocalin_ad_pos_blood, tau=0.095)
+resultneg_log_Lipocalin_ad_pos_blood$final_weights
+```
+
+#### Albumin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Albumin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Albumin_ad_pos_blood)
+resultneg_log_Albumin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Albumin_ad_pos_blood, tau=0.095)
+resultneg_log_Albumin_ad_pos_blood$final_weights
+```
+
+#### Clusterin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Clusterin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Clusterin_ad_pos_blood)
+resultneg_log_Clusterin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Clusterin_ad_pos_blood, tau=0.095)
+resultneg_log_Clusterin_ad_pos_blood$final_weights
+```
+
+#### CystatinC
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_CystatinC_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_CystatinC_ad_pos_blood)
+resultneg_log_CystatinC_ad_pos_blood_table
+gwqs_barplot(resultneg_log_CystatinC_ad_pos_blood, tau=0.095)
+resultneg_log_CystatinC_ad_pos_blood$final_weights
+```
+
+#### OPN
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_OPN_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_OPN_ad_pos_blood)
+resultneg_log_OPN_ad_pos_blood_table
+gwqs_barplot(resultneg_log_OPN_ad_pos_blood, tau=0.095)
+resultneg_log_OPN_ad_pos_blood$final_weights
+```
+
+#### a1Micro
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_a1Micro_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_a1Micro_ad_pos_blood)
+resultneg_log_a1Micro_ad_pos_blood_table
+gwqs_barplot(resultneg_log_a1Micro_ad_pos_blood, tau=0.095)
+resultneg_log_a1Micro_ad_pos_blood$final_weights
+```
+
+#### Uromodulin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Uromodulin_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Uromodulin_ad_pos_blood)
+resultneg_log_Uromodulin_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Uromodulin_ad_pos_blood, tau=0.095)
+resultneg_log_Uromodulin_ad_pos_blood$final_weights
+```
+
+#### Uromodulin mfi
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Uromodulin_mfi_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_Uromodulin_mfi_ad_pos_blood)
+resultneg_log_Uromodulin_mfi_ad_pos_blood_table
+gwqs_barplot(resultneg_log_Uromodulin_mfi_ad_pos_blood, tau=0.095)
+resultneg_log_Uromodulin_mfi_ad_pos_blood$final_weights
+```
+
+#### RBP4
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_RBP4_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_RBP4_ad_pos_blood)
+resultneg_log_RBP4_ad_pos_blood_table
+gwqs_barplot(resultneg_log_RBP4_ad_pos_blood, tau=0.095)
+resultneg_log_RBP4_ad_pos_blood$final_weights
+```
+
+#### X2Micro
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_X2Micro_ad_pos_blood_table<-gwqs_summary_tab(resultneg_log_X2Micro_ad_pos_blood)
+resultneg_log_X2Micro_ad_pos_blood_table
+gwqs_barplot(resultneg_log_X2Micro_ad_pos_blood, tau=0.095)
+resultneg_log_X2Micro_ad_pos_blood$final_weights
+```
+
+
+
+
+
+
+
+
+## Urine metal mixture: +, rh=100, adjusted for CRE
+### Tables
+```{r, include=FALSE}
+
+resultneg_log_h_egfr_ad_pos_urine = gwqsrh(h_egfr_cystc96 ~ wqs +
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 62000, signal="t2")
+resultneg_log_calbindin_ad_pos_urine = gwqsrh(log_calbindin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 58751, signal="t2")
+resultneg_log_GSTa_ad_pos_urine = gwqsrh(log_GSTa ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 45985, signal="t2")
+resultneg_log_TIMP1_ad_pos_urine = gwqsrh(log_TIMP1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 45930, signal="t2")
+resultneg_log_KIM1_ad_pos_urine = gwqsrh(log_KIM1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 84562, signal="t2")
+resultneg_log_IP10_ad_pos_urine = gwqsrh(log_IP10 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 15648, signal="t2")
+resultneg_log_Renin_ad_pos_urine = gwqsrh(log_Renin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 26489, signal="t2")
+resultneg_log_FABP1_ad_pos_urine = gwqsrh(log_FABP1 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 31254, signal="t2")
+resultneg_log_EGF_ad_pos_urine = gwqsrh(log_EGF ~wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 79485, signal="t2")
+resultneg_log_Lipocalin_ad_pos_urine = gwqsrh(log_Lipocalin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 41658, signal="t2")
+resultneg_log_Albumin_ad_pos_urine = gwqsrh(log_Albumin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 16489, signal="t2")
+resultneg_log_Clusterin_ad_pos_urine = gwqsrh(log_Clusterin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 47125, signal="t2")
+resultneg_log_CystatinC_ad_pos_urine = gwqsrh(log_CystatinC ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 94856, signal="t2")
+resultneg_log_OPN_ad_pos_urine = gwqsrh(log_OPN ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 92635, signal="t2")
+resultneg_log_a1Micro_ad_pos_urine = gwqsrh(log_a1Micro ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 12544, signal="t2")
+resultneg_log_Uromodulin_ad_pos_urine = gwqsrh(log_Uromodulin ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 87946, signal="t2")
+resultneg_log_Uromodulin_mfi_ad_pos_urine = gwqsrh(log_Uromodulin_mfi ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 10325, signal="t2")
+resultneg_log_RBP4_ad_pos_urine = gwqsrh(log_RBP4 ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 36251, signal="t2")
+resultneg_log_X2Micro_ad_pos_urine = gwqsrh(log_X2Micro ~ wqs+  CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture1, data = urine_log, q = 4,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 52648, signal="t2")
+
+resultneg_log_h_egfr_ad_pos_urine
+
+
+```
+
+#### eGFR
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_h_egfr_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_h_egfr_ad_pos_urine)
+resultneg_log_h_egfr_ad_pos_urine_table
+gwqs_barplot(resultneg_log_h_egfr_ad_pos_urine, tau=0.095)
+resultneg_log_h_egfr_ad_pos_urine$final_weights
+```
+
+#### calbindin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_calbindin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_calbindin_ad_pos_urine)
+resultneg_log_calbindin_ad_pos_urine_table
+gwqs_barplot(resultneg_log_calbindin_ad_pos_urine, tau=0.095)
+resultneg_log_calbindin_ad_pos_urine$final_weights
+```
+
+#### GSTa
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_GSTa_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_GSTa_ad_pos_urine)
+resultneg_log_GSTa_ad_pos_urine_table
+gwqs_barplot(resultneg_log_GSTa_ad_pos_urine, tau=0.095)
+resultneg_log_GSTa_ad_pos_urine$final_weights
+```
+
+#### TIMP1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_TIMP1_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_TIMP1_ad_pos_urine)
+resultneg_log_TIMP1_ad_pos_urine_table
+TIMP1_plot<- gwqs_barplot(resultneg_log_TIMP1_ad_pos_urine, tau=0.095)
+resultneg_log_TIMP1_ad_pos_urine$final_weights
+
+```
+
+#### KIM1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_KIM1_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_KIM1_ad_pos_urine)
+resultneg_log_KIM1_ad_pos_urine_table
+KIM1_plot<- gwqs_barplot(resultneg_log_KIM1_ad_pos_urine, tau=0.095)
+resultneg_log_KIM1_ad_pos_urine$final_weights
+
+```
+
+#### IP10
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_IP10_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_IP10_ad_pos_urine)
+resultneg_log_IP10_ad_pos_urine_table
+IP10_plot<- gwqs_barplot(resultneg_log_IP10_ad_pos_urine, tau=0.095)
+resultneg_log_IP10_ad_pos_urine$final_weights
+```
+
+#### Renin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Renin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Renin_ad_pos_urine)
+resultneg_log_Renin_ad_pos_urine_table
+gwqs_barplot(resultneg_log_Renin_ad_pos_urine, tau=0.095)
+resultneg_log_Renin_ad_pos_urine$final_weights
+```
+
+#### FABP1
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_FABP1_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_FABP1_ad_pos_urine)
+resultneg_log_FABP1_ad_pos_urine_table
+FABP1_plot<- gwqs_barplot(resultneg_log_FABP1_ad_pos_urine, tau=0.095)
+resultneg_log_FABP1_ad_pos_urine$final_weights
+```
+
+#### EGF
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_EGF_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_EGF_ad_pos_urine)
+resultneg_log_EGF_ad_pos_urine_table
+EGF_plot<- gwqs_barplot(resultneg_log_EGF_ad_pos_urine, tau=0.095)
+resultneg_log_EGF_ad_pos_urine$final_weights
+```
+
+#### Lipocalin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Lipocalin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Lipocalin_ad_pos_urine)
+resultneg_log_Lipocalin_ad_pos_urine_table
+gwqs_barplot(resultneg_log_Lipocalin_ad_pos_urine, tau=0.095)
+resultneg_log_Lipocalin_ad_pos_urine$final_weights
+```
+
+#### Albumin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Albumin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Albumin_ad_pos_urine)
+resultneg_log_Albumin_ad_pos_urine_table
+Albumin_plot<- gwqs_barplot(resultneg_log_Albumin_ad_pos_urine, tau=0.095)
+resultneg_log_Albumin_ad_pos_urine$final_weights
+```
+
+#### Clusterin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Clusterin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Clusterin_ad_pos_urine)
+resultneg_log_Clusterin_ad_pos_urine_table
+Clusterin_plot<- gwqs_barplot(resultneg_log_Clusterin_ad_pos_urine, tau=0.095)
+resultneg_log_Clusterin_ad_pos_urine$final_weights
+```
+
+#### CystatinC
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_CystatinC_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_CystatinC_ad_pos_urine)
+resultneg_log_CystatinC_ad_pos_urine_table
+CystatinC_plot<- gwqs_barplot(resultneg_log_CystatinC_ad_pos_urine, tau=0.095)
+resultneg_log_CystatinC_ad_pos_urine$final_weights
+```
+
+#### OPN
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_OPN_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_OPN_ad_pos_urine)
+resultneg_log_OPN_ad_pos_urine_table
+gwqs_barplot(resultneg_log_OPN_ad_pos_urine, tau=0.095)
+resultneg_log_OPN_ad_pos_urine$final_weights
+```
+
+#### a1Micro
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_a1Micro_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_a1Micro_ad_pos_urine)
+resultneg_log_a1Micro_ad_pos_urine_table
+gwqs_barplot(resultneg_log_a1Micro_ad_pos_urine, tau=0.095)
+resultneg_log_a1Micro_ad_pos_urine$final_weights
+```
+
+#### Uromodulin
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Uromodulin_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Uromodulin_ad_pos_urine)
+resultneg_log_Uromodulin_ad_pos_urine_table
+gwqs_barplot(resultneg_log_Uromodulin_ad_pos_urine, tau=0.095)
+resultneg_log_Uromodulin_ad_pos_urine$final_weights
+```
+
+#### Uromodulin mfi
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_Uromodulin_mfi_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_Uromodulin_mfi_ad_pos_urine)
+resultneg_log_Uromodulin_mfi_ad_pos_urine_table
+gwqs_barplot(resultneg_log_Uromodulin_mfi_ad_pos_urine, tau=0.095)
+resultneg_log_Uromodulin_mfi_ad_pos_urine$final_weights
+```
+
+#### RBP4
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_RBP4_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_RBP4_ad_pos_urine)
+resultneg_log_RBP4_ad_pos_urine_table
+RBP4_plot<- gwqs_barplot(resultneg_log_RBP4_ad_pos_urine, tau=0.095)
+resultneg_log_RBP4_ad_pos_urine$final_weights
+```
+
+#### X2Micro
+```{r, warning=FALSE, message=FALSE}
+resultneg_log_X2Micro_ad_pos_urine_table<-gwqs_summary_tab(resultneg_log_X2Micro_ad_pos_urine)
+resultneg_log_X2Micro_ad_pos_urine_table
+B2M_plot<- gwqs_barplot(resultneg_log_X2Micro_ad_pos_urine, tau=0.095)
+resultneg_log_X2Micro_ad_pos_urine$final_weights
+```
+
+
+
+
+## Blood protein mixture: +, rh=100, adjusted for CRE
+### Tables
+#### As vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+
+blood_log1<- blood_log[,c("log_As","log_Cd","log_Pb","Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","log_Uromodulin","Uromodulin (MFI)","RBP4", "B2M","SES_3cat2T","child_age96","sexo_h00","smoke_inside2T","_ZBFA96")]
+
+blood_log2<- blood_log1[complete.cases(blood_log1),]
+
+resultpos_As_CRE = gwqsrh(log_As ~ wqs+ 
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`, 
+                 mix_name = mixture_pro2, data = blood_log2, q = 10, 
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian", 
+                 seed = 02141, signal="t2",future.seed = TRUE)
+resultpos_As_CRE_table<-gwqs_summary_tab(resultpos_As_CRE) 
+resultpos_As_CRE_table
+As_plot<- gwqs_barplot(resultpos_As_CRE,tau=0.095)
+resultpos_As_CRE$final_weights
+
+
+
+```
+
+
+#### Cd vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+resultpos_Cd_CRE = gwqsrh(log_Cd ~ wqs+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`, 
+                 mix_name = mixture_pro2, data = blood_log2, q = 10, 
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian", 
+                 seed = 11415, signal="t2",future.seed = TRUE)
+resultpos_Cd_CRE_table<-gwqs_summary_tab(resultpos_Cd_CRE) 
+resultpos_Cd_CRE_table
+resultpos_Cd_CRE_table<- gwqs_barplot(resultpos_Cd_CRE, tau=0.095)
+resultpos_Cd_CRE$final_weights
+
+```
+
+#### Pb vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+resultpos_Pb_CRE = gwqsrh(log_Pb ~ wqs+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture_pro2, data = blood_log2, q = 10,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 02141, signal="t2",future.seed = TRUE)
+resultpos_Pb_CRE_table<-gwqs_summary_tab(resultpos_Pb_CRE)
+resultpos_Pb_CRE_table
+Pb_plot<- gwqs_barplot(resultpos_Pb_CRE,tau=0.095)
+resultpos_Pb_CRE$final_weights
+
+
+```
+
+
+
+
+
+## Urine protein mixture: +, rh=100, adjusted for CRE
+### Tables
+#### As vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+
+urine_log1<- urine_log[,c("log_As","log_Cd","log_Pb","log_Hg","Calbindin","GSTα","TIMP1","KIM-1","IP10","Renin","FABP1","EGF","NGAL","Albumin","Clusterin","CystatinC","OPN","A1M","log_Uromodulin","Uromodulin (MFI)","RBP4", "B2M","SES_3cat2T","child_age96","sexo_h00","smoke_inside2T","_ZBFA96","CRE")]
+
+urine_log2<- urine_log1[complete.cases(urine_log1),]
+
+resultpos_As_CRE = gwqsrh(log_As ~ wqs+ CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`, 
+                 mix_name = mixture_pro, data = urine_log2, q = 10, 
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian", 
+                 seed = 02141, signal="t2",future.seed = TRUE)
+resultpos_As_CRE_table<-gwqs_summary_tab(resultpos_As_CRE) 
+resultpos_As_CRE_table
+As_plot<- gwqs_barplot(resultpos_As_CRE,tau=0.095)
+resultpos_As_CRE$final_weights
+
+
+
+```
+
+
+#### Cd vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+resultpos_Cd_CRE = gwqsrh(log_Cd ~ wqs+CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`, 
+                 mix_name = mixture_pro, data = urine_log2, q = 10, 
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian", 
+                 seed = 11415, signal="t2",future.seed = TRUE)
+resultpos_Cd_CRE_table<-gwqs_summary_tab(resultpos_Cd_CRE) 
+resultpos_Cd_CRE_table
+Cd_plot<- gwqs_barplot(resultpos_Cd_CRE, tau=0.095)
+resultpos_Cd_CRE$final_weights
+
+```
+
+#### Pb vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+resultpos_Pb_CRE_urine = gwqsrh(log_Pb ~ wqs+ CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture_pro, data = urine_log2, q = 10,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 02141, signal="t2",future.seed = TRUE)
+resultpos_Pb_CRE_urine_table<-gwqs_summary_tab(resultpos_Pb_CRE_urine)
+resultpos_Pb_CRE_urine_table
+Pb_plot<- gwqs_barplot(resultpos_Pb_CRE_urine,tau=0.095)
+resultpos_Pb_CRE_urine$final_weights
+
+
+```
+
+
+#### Hg vs. all proteins
+```{r, warning=FALSE, message=FALSE}
+resultpos_Hg_CRE_urine = gwqsrh(log_Hg ~ wqs+ CRE+
+                as.factor(SES_3cat2T) + child_age96 + as.factor(sexo_h00) + as.factor(smoke_inside2T) + `_ZBFA96`,
+                 mix_name = mixture_pro, data = urine_log2, q = 10,
+                 validation = 0.6,rh = 100, b = 100, rs= FALSE, b1_pos = TRUE, b1_constr = TRUE, family = "gaussian",
+                 seed = 02141, signal="t2",future.seed = TRUE)
+resultpos_Hg_CRE_urine_table<-gwqs_summary_tab(resultpos_Hg_CRE_urine)
+resultpos_Hg_CRE_urine_table
+Hg_plot<- gwqs_barplot(resultpos_Hg_CRE_urine,tau=0.095)
+resultpos_Hg_CRE_urine$final_weights
+
+```
+
+# Figures
+```{r}
+## figure 1
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(scales)
+library(tidyverse)
+TIMP1_plot <- TIMP1_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="I")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold"),
+                 
+           )
+
+KIM1_plot <- KIM1_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="C")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+IP10_plot <- IP10_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="J")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+FABP1_plot <- FABP1_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="F")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+EGF_plot <- EGF_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="G")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+Albumin_plot <- Albumin_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="A")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+Clusterin_plot <- Clusterin_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="H")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+CystatinC_plot <- CystatinC_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="B")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+RBP4_plot <- RBP4_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="E")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+B2M_plot <- B2M_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="D")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+
+protein_metal_mixture_plot<- ggarrange(Albumin_plot, CystatinC_plot, KIM1_plot, B2M_plot, RBP4_plot, FABP1_plot, EGF_plot, Clusterin_plot, TIMP1_plot, IP10_plot,
+                                       nrow=5, ncol=2,
+                                       align="hv") %>% 
+                        annotate_figure(
+                bottom = text_grob("Weight percentage", color = "black", face = "bold", size = 12)
+                )
+protein_metal_mixture_plot
+
+## figure 2
+As_plot <- As_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="A")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+
+Cd_plot <- Cd_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="B")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+Pb_plot<- Pb_plot +
+           scale_y_continuous(labels = function(x) paste0(x*100, "%")) + 
+           labs(title="C")+
+           theme(
+                 title = element_text(color="black", size=10, face="bold")
+           )
+
+
+Metal_protein_mixture_plot<- ggarrange(As_plot, Cd_plot, Pb_plot,
+                                       nrow=1, ncol=3,
+                                       align="hv") %>% 
+                        annotate_figure(
+                bottom = text_grob("Weight percentage", color = "black", face = "bold", size = 12)
+                )
+Metal_protein_mixture_plot
+
+```
+
